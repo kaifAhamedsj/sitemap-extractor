@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sitemap URL Extractor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; color: #f8fafc; }
+    .subtitle { color: #94a3b8; margin-bottom: 24px; }
+    .card {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #334155;
+      border-radius: 10px;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+    input:focus { outline: none; border-color: #38bdf8; }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #0ea5e9;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #0284c7; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    #status { margin-top: 16px; color: #94a3b8; font-size: 0.95rem; }
+    #results { display: none; }
+    textarea {
+      width: 100%;
+      height: 400px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      resize: vertical;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 12px; }
+    .actions button { width: auto; flex: 1; }
+    .count { margin-top: 10px; color: #38bdf8; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sitemap URL Extractor</h1>
+    <p class="subtitle">Paste any domain → extract all URLs from its sitemap (works with nested + .gz)</p>
+
+    <div class="card">
+      <input type="text" id="domain" placeholder="example.com or https://play.google.com" value="play.google.com">
+      <button id="startBtn" onclick="startExtraction()">Extract All URLs</button>
+      <div id="status"></div>
+    </div>
+
+    <div class="card" id="results">
+      <div class="count" id="count"></div>
+      <textarea id="output" readonly></textarea>
+      <div class="actions">
+        <button onclick="downloadTxt()">Download as .txt</button>
+        <button onclick="copyAll()">Copy All</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ←←← CHANGE THIS to your Worker URL
+    const WORKER_URL = "https://sitemap-extractor.YOUR-SUBDOMAIN.workers.dev";
+
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+    const countEl = document.getElementById("count");
+    const resultsEl = document.getElementById("results");
+    const startBtn = document.getElementById("startBtn");
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    async function fetchViaWorker(url) {
+      const res = await fetch(`\( {WORKER_URL}?url= \){encodeURIComponent(url)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      return await res.text();
+    }
+
+    function extractLocs(xml) {
+      const locs = [];
+      const regex = /<loc>(.*?)<\/loc>/gi;
+      let match;
+      while ((match = regex.exec(xml)) !== null) {
+        locs.push(match[1].trim());
+      }
+      return locs;
+    }
+
+    async function startExtraction() {
+      let domain = document.getElementById("domain").value.trim();
+      if (!domain) return alert("Enter a domain");
+
+      domain = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const base = "https://" + domain;
+
+      startBtn.disabled = true;
+      resultsEl.style.display = "none";
+      outputEl.value = "";
+      setStatus("Fetching robots.txt...");
+
+      try {
+        // 1. robots.txt
+        const robots = await fetchViaWorker(base + "/robots.txt");
+        const sitemapUrls = [];
+        robots.split("\n").forEach(line => {
+          const m = line.match(/^Sitemap:\s*(.+)$/i);
+          if (m) sitemapUrls.push(m[1].trim());
+        });
+
+        if (sitemapUrls.length === 0) {
+          // fallback
+          sitemapUrls.push(base + "/sitemap.xml");
+          sitemapUrls.push(base + "/sitemap_index.xml");
+        }
+
+        setStatus(`Found ${sitemapUrls.length} sitemap(s). Processing...`);
+
+        const allUrls = new Set();
+        const queue = [...sitemapUrls];
+        let processed = 0;
+
+        while (queue.length > 0) {
+          const current = queue.shift();
+          processed++;
+          setStatus(`Processing ${processed} files... (found ${allUrls.size} URLs so far)`);
+
+          try {
+            const content = await fetchViaWorker(current);
+            const locs = extractLocs(content);
+
+            for (const loc of locs) {
+              if (loc.endsWith(".xml") || loc.endsWith(".xml.gz") || loc.includes("sitemap")) {
+                queue.push(loc); // nested sitemap
+              } else {
+                allUrls.add(loc);
+              }
+            }
+          } catch (e) {
+            console.warn("Failed:", current, e.message);
+          }
+
+          // Safety limit so it doesn't run forever on huge sites like play.google.com
+          if (allUrls.size > 50000) {
+            setStatus("Stopped at 50,000 URLs (safety limit). Download what we have.");
+            break;
+          }
+        }
+
+        const finalList = Array.from(allUrls).sort();
+        outputEl.value = finalList.join("\n");
+        countEl.textContent = `Extracted ${finalList.length} unique URLs`;
+        resultsEl.style.display = "block";
+        setStatus("Done!");
+      } catch (err) {
+        setStatus("Error: " + err.message);
+      } finally {
+        startBtn.disabled = false;
+      }
+    }
+
+    function downloadTxt() {
+      const blob = new Blob([outputEl.value], { type: "text/plain" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "sitemap-urls.txt";
+      a.click();
+    }
+
+    function copyAll() {
+      navigator.clipboard.writeText(outputEl.value);
+      alert("Copied to clipboard!");
+    }
+  </script>
+</body>
+  </html>
