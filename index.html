@@ -3,28 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sitemap URL Extractor</title>
+  <title>Fast Sitemap Extractor</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: #0f172a;
       color: #e2e8f0;
       min-height: 100vh;
-      padding: 20px;
+      padding: 16px;
     }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { font-size: 1.8rem; margin-bottom: 8px; color: #f8fafc; }
-    .subtitle { color: #94a3b8; margin-bottom: 24px; }
+    .container { max-width: 860px; margin: 0 auto; }
+    h1 { font-size: 1.7rem; margin-bottom: 6px; color: #f8fafc; }
+    .sub { color: #94a3b8; margin-bottom: 20px; font-size: 0.95rem; }
     .card {
       background: #1e293b;
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 20px;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
     }
-    input {
+    input, select {
       width: 100%;
-      padding: 14px 16px;
+      padding: 13px 14px;
       border: 2px solid #334155;
       border-radius: 10px;
       background: #0f172a;
@@ -32,9 +33,11 @@
       font-size: 1rem;
       margin-bottom: 12px;
     }
-    input:focus { outline: none; border-color: #38bdf8; }
+    input:focus, select:focus { outline: none; border-color: #38bdf8; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row select { width: 170px; flex-shrink: 0; }
+    .row button { flex: 1; min-width: 140px; }
     button {
-      width: 100%;
       padding: 14px;
       background: #0ea5e9;
       color: white;
@@ -43,166 +46,281 @@
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
+      transition: background 0.2s;
     }
     button:hover { background: #0284c7; }
     button:disabled { background: #475569; cursor: not-allowed; }
-    #status { margin-top: 16px; color: #94a3b8; font-size: 0.95rem; }
+    #status {
+      margin-top: 14px;
+      font-size: 0.95rem;
+      color: #94a3b8;
+      min-height: 24px;
+      word-break: break-word;
+    }
+    #progress {
+      height: 6px;
+      background: #334155;
+      border-radius: 3px;
+      margin-top: 12px;
+      overflow: hidden;
+      display: none;
+    }
+    #bar {
+      height: 100%;
+      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+      width: 0%;
+      transition: width 0.25s ease;
+    }
     #results { display: none; }
     textarea {
       width: 100%;
-      height: 400px;
+      height: 380px;
       background: #0f172a;
       color: #e2e8f0;
       border: 1px solid #334155;
       border-radius: 10px;
       padding: 12px;
-      font-family: monospace;
-      font-size: 0.85rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
       resize: vertical;
+      line-height: 1.4;
     }
-    .actions { display: flex; gap: 10px; margin-top: 12px; }
-    .actions button { width: auto; flex: 1; }
-    .count { margin-top: 10px; color: #38bdf8; font-weight: 600; }
+    .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .actions button { flex: 1; min-width: 140px; }
+    .count { color: #38bdf8; font-weight: 600; margin-bottom: 8px; font-size: 1.05rem; }
+    .note {
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #64748b;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Sitemap URL Extractor</h1>
-    <p class="subtitle">Paste any domain → extract all URLs from its sitemap (works with nested + .gz)</p>
+    <h1>Fast Sitemap Extractor</h1>
+    <p class="sub">Parallel + smart limits • Handles .gz without hanging • Instant .txt download</p>
 
     <div class="card">
-      <input type="text" id="domain" placeholder="example.com or https://play.google.com" value="play.google.com">
-      <button id="startBtn" onclick="startExtraction()">Extract All URLs</button>
-      <div id="status"></div>
+      <input type="text" id="domain" placeholder="play.google.com or example.com" value="play.google.com">
+      <div class="row">
+        <select id="mode">
+          <option value="quick">Quick Mode (recommended)</option>
+          <option value="full">Full Mode (slower, deeper)</option>
+        </select>
+        <button id="btn" onclick="run()">Start Extraction</button>
+      </div>
+      <div id="status">Ready – paste any domain and click Start</div>
+      <div id="progress"><div id="bar"></div></div>
     </div>
 
     <div class="card" id="results">
       <div class="count" id="count"></div>
-      <textarea id="output" readonly></textarea>
+      <textarea id="output" readonly placeholder="URLs will appear here..."></textarea>
       <div class="actions">
-        <button onclick="downloadTxt()">Download as .txt</button>
-        <button onclick="copyAll()">Copy All</button>
+        <button onclick="download()">Download .txt (instant)</button>
+        <button onclick="copy()">Copy All</button>
       </div>
+      <p class="note">Tip: For very large sites (like play.google.com) Quick Mode stops at a safe limit so the page never freezes.</p>
     </div>
   </div>
 
   <script>
-    // ←←← CHANGE THIS to your Worker URL
-    const WORKER_URL = "https://sitemap-extractor.YOUR-SUBDOMAIN.workers.dev";
+    // ==================== CHANGE THIS LINE ====================
+    const WORKER = "https://sitemap-extractor.YOUR-SUBDOMAIN.workers.dev";
+    // ==========================================================
 
     const statusEl = document.getElementById("status");
-    const outputEl = document.getElementById("output");
+    const bar = document.getElementById("bar");
+    const progress = document.getElementById("progress");
+    const output = document.getElementById("output");
     const countEl = document.getElementById("count");
-    const resultsEl = document.getElementById("results");
-    const startBtn = document.getElementById("startBtn");
+    const results = document.getElementById("results");
+    const btn = document.getElementById("btn");
 
     function setStatus(msg) {
       statusEl.textContent = msg;
     }
 
-    async function fetchViaWorker(url) {
-      const res = await fetch(`\( {WORKER_URL}?url= \){encodeURIComponent(url)}`);
+    function setProgress(pct) {
+      progress.style.display = "block";
+      bar.style.width = Math.min(100, Math.round(pct)) + "%";
+    }
+
+    async function proxy(url) {
+      const res = await fetch(`${WORKER}?url=${encodeURIComponent(url)}`);
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        let errMsg = res.status;
+        try {
+          const j = await res.json();
+          errMsg = j.error || errMsg;
+        } catch {}
+        throw new Error(errMsg);
       }
-      return await res.text();
+      return res.text();
     }
 
     function extractLocs(xml) {
-      const locs = [];
-      const regex = /<loc>(.*?)<\/loc>/gi;
-      let match;
-      while ((match = regex.exec(xml)) !== null) {
-        locs.push(match[1].trim());
+      const urls = [];
+      const re = /<loc>([^<]+)<\/loc>/gi;
+      let m;
+      while ((m = re.exec(xml)) !== null) {
+        urls.push(m[1].trim());
       }
-      return locs;
+      return urls;
     }
 
-    async function startExtraction() {
+    // Controlled parallel pool
+    async function runPool(items, concurrency, workerFn) {
+      const results = new Array(items.length);
+      let index = 0;
+      let finished = 0;
+
+      async function worker() {
+        while (index < items.length) {
+          const i = index++;
+          try {
+            results[i] = await workerFn(items[i], i);
+          } catch (e) {
+            results[i] = null;
+          }
+          finished++;
+          setProgress((finished / items.length) * 100);
+        }
+      }
+
+      const workers = [];
+      for (let i = 0; i < Math.min(concurrency, items.length); i++) {
+        workers.push(worker());
+      }
+      await Promise.all(workers);
+      return results;
+    }
+
+    async function run() {
       let domain = document.getElementById("domain").value.trim();
-      if (!domain) return alert("Enter a domain");
+      if (!domain) {
+        alert("Please enter a domain");
+        return;
+      }
 
-      domain = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      domain = domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "").split("/")[0];
       const base = "https://" + domain;
+      const mode = document.getElementById("mode").value;
 
-      startBtn.disabled = true;
-      resultsEl.style.display = "none";
-      outputEl.value = "";
+      btn.disabled = true;
+      results.style.display = "none";
+      output.value = "";
+      setProgress(0);
       setStatus("Fetching robots.txt...");
 
       try {
         // 1. robots.txt
-        const robots = await fetchViaWorker(base + "/robots.txt");
+        let robotsText = "";
+        try {
+          robotsText = await proxy(base + "/robots.txt");
+        } catch (e) {
+          setStatus("robots.txt not found, trying common sitemap locations...");
+        }
+
         const sitemapUrls = [];
-        robots.split("\n").forEach(line => {
+        robotsText.split(/\r?\n/).forEach(line => {
           const m = line.match(/^Sitemap:\s*(.+)$/i);
           if (m) sitemapUrls.push(m[1].trim());
         });
 
+        // Fallback common locations
         if (sitemapUrls.length === 0) {
-          // fallback
-          sitemapUrls.push(base + "/sitemap.xml");
-          sitemapUrls.push(base + "/sitemap_index.xml");
+          sitemapUrls.push(
+            base + "/sitemap.xml",
+            base + "/sitemap_index.xml",
+            base + "/sitemap-index.xml",
+            base + "/sitemaps.xml"
+          );
         }
 
-        setStatus(`Found ${sitemapUrls.length} sitemap(s). Processing...`);
+        setStatus(`Found ${sitemapUrls.length} starting sitemap(s). Loading...`);
 
         const allUrls = new Set();
-        const queue = [...sitemapUrls];
-        let processed = 0;
+        let queue = [...sitemapUrls];
+        let processedFiles = 0;
+        const maxFiles = mode === "quick" ? 40 : 200;          // safety
+        const maxUrls  = mode === "quick" ? 25000 : 80000;     // safety
+        const concurrency = 6;
 
-        while (queue.length > 0) {
-          const current = queue.shift();
-          processed++;
-          setStatus(`Processing ${processed} files... (found ${allUrls.size} URLs so far)`);
+        while (queue.length > 0 && processedFiles < maxFiles && allUrls.size < maxUrls) {
+          const batch = queue.splice(0, 30); // take a batch
+          setStatus(`Processing batch... (${processedFiles} files done, ${allUrls.size} URLs found)`);
 
-          try {
-            const content = await fetchViaWorker(current);
-            const locs = extractLocs(content);
+          const batchResults = await runPool(batch, concurrency, async (url) => {
+            try {
+              const content = await proxy(url);
+              return extractLocs(content);
+            } catch {
+              return [];
+            }
+          });
 
+          for (const locs of batchResults) {
+            if (!locs) continue;
+            processedFiles++;
             for (const loc of locs) {
-              if (loc.endsWith(".xml") || loc.endsWith(".xml.gz") || loc.includes("sitemap")) {
-                queue.push(loc); // nested sitemap
+              const lower = loc.toLowerCase();
+              if (lower.endsWith(".xml") || lower.endsWith(".xml.gz") || lower.includes("sitemap")) {
+                if (queue.length + processedFiles < maxFiles) {
+                  queue.push(loc);
+                }
               } else {
                 allUrls.add(loc);
               }
             }
-          } catch (e) {
-            console.warn("Failed:", current, e.message);
           }
 
-          // Safety limit so it doesn't run forever on huge sites like play.google.com
-          if (allUrls.size > 50000) {
-            setStatus("Stopped at 50,000 URLs (safety limit). Download what we have.");
-            break;
-          }
+          setProgress(Math.min(95, (processedFiles / maxFiles) * 100));
         }
 
         const finalList = Array.from(allUrls).sort();
-        outputEl.value = finalList.join("\n");
-        countEl.textContent = `Extracted ${finalList.length} unique URLs`;
-        resultsEl.style.display = "block";
-        setStatus("Done!");
+        output.value = finalList.join("\n");
+        countEl.textContent = `Extracted ${finalList.length.toLocaleString()} unique URLs`;
+        results.style.display = "block";
+        setProgress(100);
+        setStatus(mode === "quick"
+          ? `Done (Quick Mode). Stopped at safe limit.`
+          : `Done (Full Mode).`);
       } catch (err) {
         setStatus("Error: " + err.message);
+        console.error(err);
       } finally {
-        startBtn.disabled = false;
+        btn.disabled = false;
       }
     }
 
-    function downloadTxt() {
-      const blob = new Blob([outputEl.value], { type: "text/plain" });
+    function download() {
+      const text = output.value;
+      if (!text) return alert("No URLs to download");
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "sitemap-urls.txt";
+      document.body.appendChild(a);
       a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 100);
     }
 
-    function copyAll() {
-      navigator.clipboard.writeText(outputEl.value);
-      alert("Copied to clipboard!");
+    function copy() {
+      if (!output.value) return alert("Nothing to copy");
+      navigator.clipboard.writeText(output.value).then(() => {
+        alert("Copied " + output.value.split("\n").length + " URLs to clipboard!");
+      });
     }
+
+    // Enter key support
+    document.getElementById("domain").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") run();
+    });
   </script>
 </body>
-  </html>
+</html>
